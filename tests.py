@@ -247,3 +247,144 @@ def test_09_search_non_existent_book(driver):
 
     rows = driver.find_elements(By.CSS_SELECTOR, "#tableBody tr")
     assert len(rows) == 0, "Пошук мав повернути 0 результатів"
+
+
+def test_10_add_author_empty_fields(driver):
+    """
+    10. Негативний сценарій: Спроба додати автора з порожніми обов'язковими полями.
+
+    Feature: Валідація даних автора
+    Scenario: Користувач намагається створити автора без імені
+        Given відкрито модальне вікно додавання автора
+        When користувач залишає поле "Ім'я" порожнім і натискає "Зберегти"
+        Then автор не повинен з'явитися в таблиці
+    """
+    driver.get(url)
+    click_menu(driver, "Автори")
+
+    unique_email = f"empty_{int(time.time())}@test.com"
+
+    click_menu(driver, "Додати автора")
+    WebDriverWait(driver, 3).until(EC.visibility_of_element_located((By.ID, "authorModal")))
+
+    driver.find_element(By.ID, "authEmail").send_keys(unique_email)
+    driver.find_element(By.ID, "authAge").send_keys("25")
+
+    driver.find_element(By.CSS_SELECTOR, "#authorModal .save-btn").click()
+    WebDriverWait(driver, 3).until(EC.invisibility_of_element_located((By.ID, "authorModal")))
+    time.sleep(1)
+
+    page_source = driver.find_element(By.ID, "tableBody").text
+    assert unique_email not in page_source, "Автор з порожнім іменем був створений"
+
+
+def test_11_add_book_invalid_year(driver):
+    """
+    11. Негативний сценарій: Спроба додати книгу з некоректним роком (наприклад, -500).
+
+    Feature: Валідація даних книги
+    Scenario: Користувач вводить від'ємний рік
+        Given відкрито модальне вікно додавання книги
+        When користувач вводить рік "-500"
+        Then книга не повинна з'явитися в таблиці
+    """
+    driver.get(url)
+    if "Email" in driver.find_element(By.ID, "tableHeader").text:
+        click_menu(driver, "Книги")
+
+    invalid_title = f"InvalidYearBook_{int(time.time())}"
+
+    click_menu(driver, "Додати книгу")
+    WebDriverWait(driver, 3).until(EC.visibility_of_element_located((By.ID, "bookModal")))
+
+    driver.find_element(By.ID, "bookTitle").send_keys(invalid_title)
+    driver.find_element(By.ID, "bookYear").send_keys("-500")
+
+    try:
+        select = driver.find_element(By.ID, "bookAuthorSelect")
+        options = select.find_elements(By.TAG_NAME, "option")
+        if options: options[0].click()
+    except:
+        pass
+
+    driver.find_element(By.CSS_SELECTOR, "#bookModal .save-btn").click()
+    WebDriverWait(driver, 3).until(EC.invisibility_of_element_located((By.ID, "bookModal")))
+    time.sleep(1)
+
+    driver.find_element(By.ID, "mainInput").clear()
+    driver.find_element(By.ID, "mainInput").send_keys(invalid_title)
+    time.sleep(1)
+
+    rows = driver.find_elements(By.CSS_SELECTOR, "#tableBody tr")
+    assert len(rows) == 0, "Книга з від'ємним роком була створена"
+
+
+def test_12_update_author_reflects_on_book(driver):
+    """
+    12. End-to-End сценарій: Відображення змін у пов'язаних сутностях.
+    Змінюємо ім'я автора і перевіряємо, чи оновилося воно в таблиці книг.
+
+    Feature: Реактивність даних
+    Scenario: Редагування автора оновлює інформацію про книгу
+        Given створено автора "OldName" та його книгу
+        When користувач змінює ім'я автора на "NewName"
+        Then у списку книг автор тепер відображається як "NewName"
+    """
+    driver.get(url)
+    timestamp = int(time.time())
+    old_name = f"OldName_{timestamp}"
+    new_name = f"NewName_{timestamp}"
+    unique_email = f"update_{timestamp}@test.com"
+
+    add_author_helper(driver, old_name, "Test", unique_email)
+
+    book_title = f"ReflectBook_{timestamp}"
+
+    click_menu(driver, "Додати книгу")
+    WebDriverWait(driver, 3).until(EC.visibility_of_element_located((By.ID, "bookModal")))
+
+    driver.find_element(By.ID, "bookTitle").send_keys(book_title)
+    driver.find_element(By.ID, "bookYear").send_keys("2024")
+
+    select = driver.find_element(By.ID, "bookAuthorSelect")
+    time.sleep(0.5)
+    for option in select.find_elements(By.TAG_NAME, "option"):
+        if old_name in option.text:
+            option.click()
+            break
+
+    driver.find_element(By.CSS_SELECTOR, "#bookModal .save-btn").click()
+    WebDriverWait(driver, 3).until(EC.invisibility_of_element_located((By.ID, "bookModal")))
+
+    click_menu(driver, "Автори")
+    driver.find_element(By.ID, "mainInput").clear()
+    driver.find_element(By.ID, "mainInput").send_keys(old_name)
+    time.sleep(1)
+
+    rows = driver.find_elements(By.CSS_SELECTOR, "#tableBody tr")
+    if not rows:
+        pytest.fail("Автора для редагування не знайдено")
+
+    rows[0].find_element(By.CLASS_NAME, "edit-btn").click()
+    WebDriverWait(driver, 3).until(EC.visibility_of_element_located((By.ID, "authorModal")))
+
+    name_field = driver.find_element(By.ID, "authFirstName")
+    name_field.clear()
+    name_field.send_keys(new_name)
+
+    driver.find_element(By.CSS_SELECTOR, "#authorModal .save-btn").click()
+    WebDriverWait(driver, 3).until(EC.invisibility_of_element_located((By.ID, "authorModal")))
+    time.sleep(1)
+
+    click_menu(driver, "Книги")
+    driver.find_element(By.ID, "mainInput").clear()
+    driver.find_element(By.ID, "mainInput").send_keys(book_title)
+    time.sleep(1)
+
+    book_rows = driver.find_elements(By.CSS_SELECTOR, "#tableBody tr")
+    assert len(book_rows) > 0, "Книга не знайдена"
+
+    author_col_text = book_rows[0].find_elements(By.TAG_NAME, "td")[3].text
+
+    assert new_name in author_col_text, f"Ім'я автора в книзі не оновилося. Очікувалось {new_name}, є {author_col_text}"
+    assert old_name not in author_col_text, "Старе ім'я все ще відображається"
